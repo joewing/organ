@@ -1,0 +1,8 @@
+*.stl
+*.zip
+gerber
+*.elf
+*.hex
+fp-info-cache
+freq.h
+wave.h
