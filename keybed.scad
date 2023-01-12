@@ -1,22 +1,27 @@
 
-key_spacing = 3;
-base_width = 164 / 7;
+
+OUTPUT_KEYS = 1;
+OUTPUT_BED = 0;
+OUTPUT_TOOL = 0;
+
+key_spacing = 3.2;
+base_width = 164;
 
 black_key_width = 14;
-white_key_length = (6 + 2.5) * 25.4;
+white_key_length = 216;
 black_key_length = white_key_length - 2 * 25.4;
 white_key_height = 0.6 * 25.4;
 black_key_height = white_key_height + 0.4 * 25.4;
 bed_height = 6;
-bed_length = white_key_length + 0.5 * 25.4;
-hole_offset = 5.5 * 25.4;
-hole_radius = 1.5;
+bed_length = white_key_length + 16;
+joint_offset = 5.5 * 25.4;
+joint_radius = 1.5;
 mount_width = 0.75 * 25.4;
 back_height = black_key_height + 0.25 * 25.4;
 screw_head_radius = 2.8;
 screw_head_height = 3;
 pcb_standoff_height = 2;
-pcb_length = 35;
+pcb_length = 40;
 
 white_key_widths = [23, 24, 23, 24, 23, 23, 24];
 black_key_offsets = [14, 42, 83, 110, 137];
@@ -30,7 +35,7 @@ function back_offset(i) = i == 0 ? 0 : back_offset(i - 1) + back_widths[i - 1];
 module key_mount(j) {
     x = back_offset(j) + 3;
     w = back_widths[j] - 6;
-    translate([x, hole_offset, -mount_width]) {
+    translate([x, joint_offset, -mount_width]) {
         difference() {
             union() {
                 rotate([45, 0, 0]) {
@@ -55,8 +60,8 @@ module mag_mount(i) {
 module stabilizer(i) {
     x = back_offset(i);
     w = back_widths[i];
-    translate([x + w / 2 - black_key_width / 6 - 0.1, white_key_length - 2.25 * 25.4, -1]) {
-        cube([black_key_width / 3 + 0.2, 25.4, black_key_height + 2]);
+    translate([x + w / 2 - black_key_width / 6, white_key_length - 60, -1]) {
+        cube([black_key_width / 3, 30, black_key_height + 2]);
     }
     
     // Cutout for rubber band
@@ -153,22 +158,22 @@ module key_stand(j) {
     w = back_widths[j];
     key_offset = 0.65 * 25.4;
     key_elevation = 0.4 * 25.4;
-    translate([x + 3.2, hole_offset, -2]) {
+    translate([x + 3.2, joint_offset, -2]) {
         translate([0, 0, key_offset + 2]) {
             rotate([0, 90, 0]) cylinder(w - 6.4, 2, 2, $fn=32);
         }
         translate([0, -2, 2]) cube([w - 6.4, 2 * 2, key_offset]);
     }
-    translate([x, hole_offset - 2, 0]) cube([w, 8, key_elevation]);
+    translate([x, joint_offset - 2, 0]) cube([w, 8, key_elevation]);
     
     // Stabilizer.
-    translate([x, white_key_length - 2.0 * 25.4, 0]) {
+    translate([x, white_key_length - 54, 0]) {
         translate([w / 2 - black_key_width / 6 + 0.25, 0, 0]) {
-            cube([black_key_width / 3 - 0.5, 0.5 * 25.4, back_height]);
+            cube([black_key_width / 3 - 0.5, 16, back_height]);
         }
-        cube([w, 0.5 * 25.4, key_elevation]);
-        translate([w / 2 - black_key_width / 6 + 0.25, 0, back_height - 4]) {
-            rotate([0, 90, 0]) cylinder(black_key_width / 3 - 0.5, 8, 8, $fn=3);
+        cube([w, 16, key_elevation]);
+        translate([w / 2 - black_key_width / 6 + 0.25, 0, back_height - 3]) {
+            rotate([0, 90, 0]) cylinder(black_key_width / 3 - 0.5, 6, 6, $fn=3);
         }
     }
 
@@ -213,9 +218,8 @@ module standoff(x, y) {
 
 module pcb_mount() {
     standoff(3.5 + 1, bed_length - pcb_length + 3.5);
-    standoff(3.5 + 1, bed_length - 3.5);
-    standoff(6.5 * 25.4 - 3.5 - 1, bed_length - pcb_length + 3.5);
-    standoff(6.5 * 25.4 - 3.5 - 1, bed_length - 3.5);
+    standoff(base_width - 3.5 - 1, bed_length - pcb_length + 3.5);
+    standoff(base_width / 2, bed_length - 3.5);
 }
 
 module screw_hole(x, y) {
@@ -229,7 +233,7 @@ module bed() {
     translate([0, 0, -25.4 * 0.45]) {
         difference() {
             union() {
-                translate([0, 0, -bed_height]) cube([7 * base_width, bed_length, bed_height]);
+                translate([0, 0, -bed_height]) cube([base_width, bed_length, bed_height]);
                 pcb_mount();
                 for(j = [0:11]) key_stand(j);
             }
@@ -242,23 +246,36 @@ module bed() {
             translate([0.5 * 25.4, 0.5 * 25.4 + 7.25 * 25.4, -bed_height - 5]) {
                 cube([5.5 * 25.4, 25.4, bed_height + 10]);
             }
-            screw_hole(7 * base_width - 5, 5);
+            screw_hole(base_width - 5, 5);
             screw_hole(5, 5);
-            screw_hole(7 * base_width - 5, 6 * 25.4);
+            screw_hole(base_width - 5, 6 * 25.4);
             screw_hole(5, 6 * 25.4);
         }
         
+        // Stop for black keys.
+        translate([0, 1.75 * 25.4, 0]) {
+            cube([base_width, 0.75 * 25.4, 1.5]);
+        }
+        
         // Support for PCB.
-        translate([3.5, bed_length - 2, -bed_height]) {
-            cube([7 * base_width - 3.5 * 2, 2, pcb_standoff_height + bed_height]);
+        translate([0, bed_length - 2, -bed_height]) {
+            cube([base_width, 2, pcb_standoff_height + bed_height]);
         }
         translate([3.5, bed_length - pcb_length, -bed_height]) {
-            cube([7 * base_width - 3.5 * 2, 2, pcb_standoff_height + bed_height]);
+            cube([base_width - 3.5 * 2, 2, pcb_standoff_height + bed_height]);
         }
     }
 }
 
+module tool() {
+    union() {
+        rotate([0, 90, 0]) rotate([0, 0, 30]) cylinder(50, 2.1, 2.1, $fn=6);
+        translate([1.5, 0, 0]) rotate([0, 90, 45]) rotate([0, 0, 30]) cylinder(8, 2.0, 2.0, $fn=6);
+    }
+}
+
+if (OUTPUT_TOOL) translate([-20, -20, -10]) tool();
 rotate([0, 0, 90]) {
-    keys();
-    bed();
+    if (OUTPUT_KEYS) keys();
+    if (OUTPUT_BED) bed();
 }
