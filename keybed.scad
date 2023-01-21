@@ -238,7 +238,7 @@ module screw_hole(x, y) {
     }
 }
 
-middle_hole_offset = 6 * 25.4;
+middle_hole_offset = 196;
 mounting_hole_positions = [
     [base_width - 5, 5],
     [5, 5],
