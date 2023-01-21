@@ -1,7 +1,12 @@
 
+
+#define F_CPU 8000000
+
 #include <avr/pgmspace.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+
+#include <util/delay.h>
 
 #include <stdint.h>
 
@@ -9,7 +14,7 @@
 #include "wave.h"
 
 #define VOICE_BITS        3
-#define KEY_BYTES         (2 * 8)
+#define KEY_BYTES         (2 * 1)
 
 #define INSTRUMENT_COUNT  (sizeof(WAVE) / sizeof(WAVE[0]))
 #define VOICE_COUNT       (1 << VOICE_BITS)
@@ -22,7 +27,7 @@
 
 typedef struct Voice {
   volatile uint16_t timer;
-  volatile uint8_t freq_index;
+  volatile uint16_t freq;
 } Voice;
 
 static volatile uint8_t instrument;
@@ -32,26 +37,22 @@ static uint8_t key_state[KEY_BYTES];
 ISR(TIMER0_COMPA_vect)
 {
   uint16_t mix = 0;
-  uint8_t vi;
-  for(vi = 0; vi < VOICE_COUNT; vi++) {
-    const uint8_t freq_index = voices[vi].freq_index;
-    if(freq_index) {
-      const uint16_t timer = voices[vi].timer;
-      const uint8_t wave_index = timer >> 8;
-      voices[vi].timer = timer + FREQUENCIES[freq_index];
-      mix += WAVE[instrument][wave_index];
-    }
+  for(uint8_t vi = 0; vi < VOICE_COUNT; vi++) {
+    const uint16_t freq = voices[vi].freq;
+    const uint16_t timer = voices[vi].timer;
+    const uint8_t wave_index = timer >> 8;
+    mix += WAVE[instrument][wave_index];
+    voices[vi].timer = timer + freq;
   }
-  OCR1B = (mix >> VOICE_BITS) & 0xFF;
+  OCR1B = (uint8_t)(mix >> VOICE_BITS);
 }
 
 static void press_key(uint8_t freq_index)
 {
-  uint8_t i;
-  for(i = 0; i < VOICE_COUNT; i++) {
-    if(voices[i].freq_index == 0) {
+  for(uint8_t i = 0; i < VOICE_COUNT; i++) {
+    if(voices[i].freq == 0) {
       voices[i].timer = 0;
-      voices[i].freq_index = freq_index;
+      voices[i].freq = FREQUENCIES[freq_index];
       break;
     }
   }
@@ -59,10 +60,10 @@ static void press_key(uint8_t freq_index)
 
 static void release_key(uint8_t freq_index)
 {
-  uint8_t i;
-  for(i = 0; i < VOICE_COUNT; i++) {
-    if(voices[i].freq_index == freq_index) {
-      voices[i].freq_index = 0;
+  const uint16_t freq = FREQUENCIES[freq_index];
+  for(uint8_t i = 0; i < VOICE_COUNT; i++) {
+    if(voices[i].freq == freq) {
+      voices[i].freq = 0;
       break;
     }
   }
@@ -76,25 +77,22 @@ static void set_mode(uint8_t i)
   }
 }
 
-
 static void scan()
 {
-  uint8_t i;
-  uint8_t freq_index = 1;
+  uint8_t freq_index = 68 - 4;
 
   // Pull the load enable high to hold values.
   PORTB |= 1 << KEY_LATCH_PIN;
 
-  for(i = 0; i < KEY_BYTES; i++) {
-    const uint8_t control = (~PINB) & (1 << FUN_INPUT_PIN);
+  for(uint8_t i = 0; i < KEY_BYTES; i++) {
+    const uint8_t control = 0; //(~PINB) & (1 << FUN_INPUT_PIN);
     uint8_t state = key_state[i];
-    uint8_t mask = 0x80;
-    while(mask) {
+    for(uint8_t mask = 0x80; mask; mask >>= 1) {
 
       // Bring clock low so we shift on the next clock.
-      PORTB &= 1 << KEY_CLOCK_PIN;
+      PORTB &= ~(1 << KEY_CLOCK_PIN);
 
-      const uint8_t input = PINB & (1 << KEY_INPUT_PIN);
+      const uint8_t input = (~PINB) & (1 << KEY_INPUT_PIN);
       if(control) {
         if(input) set_mode(freq_index);
       } else {
@@ -112,7 +110,6 @@ static void scan()
       PORTB |= 1 << KEY_CLOCK_PIN;
 
       freq_index += 1;
-      mask >>= 1;
     }
     if(!control) {
       key_state[i] = state;
@@ -120,14 +117,14 @@ static void scan()
   }
 
   // Pull load enable low to load new values.
-  PORTB &= 1 << KEY_LATCH_PIN;
+  PORTB &= ~(1 << KEY_LATCH_PIN);
 }
 
 static void init()
 {
   uint8_t i;
   for(i = 0; i < VOICE_COUNT; i++) {
-    voices[i].freq_index = 0;
+    voices[i].freq = 0;
   }
   for(i = 0; i < KEY_BYTES; i++) {
     key_state[i] = 0;
@@ -168,23 +165,60 @@ int main()
   OCR1B = 0;                            // Duty cycle
   
   // Tone generator timer setup (timer0)
-  // Clock is 8MHz, set prescalr to 8 and divide by 100 to get 10kHz
+  // Clock is 8MHz, set prescaler to 8 and divide by 80 to get 12.5kHz
   TCCR0A = 3 << WGM00;                  // Fast PWM
   TCCR0B = (1 << WGM02) | (2 << CS00);  // Waveform, divide by 8
-  OCR0A = 100 - 1;                      // Divide by 100.
+  OCR0A = 80 - 1;                       // Divide by 80.
   TIMSK = 1 << OCIE0A;                  // Enable compare match interrupt
 
   init();
 
   sei();
 
-instrument = 1;
-//voices[0].freq_index = 68;
-voices[1].freq_index = 75;
-
+#define TOP 100
+/*
   for(;;) {
-//    scan();
+    init();
+    uint8_t i;
+    for(instrument = 0; instrument <= 3; instrument++) {
+      uint8_t note;
+      for(note = 4; note < 112; note++) {
+        voices[0].freq = FREQUENCIES[note];
+        if(FREQUENCIES[note]) {
+          for(i = 0; i < TOP; i++) {
+            scan();
+          }
+          voices[0].freq = 0;
+          for(i = 0; i < TOP / 4; i++) {
+            scan();
+          }
+        }
+      }
+voices[0].freq = FREQUENCIES[84];
+      for(i = 0; i < TOP; i++) {
+        scan();
+        scan();
+        scan();
+      }
+voices[1].freq = FREQUENCIES[88];
+      for(i = 0; i < TOP; i++) {
+        scan();
+        scan();
+        scan();
+      }
+voices[2].freq = FREQUENCIES[91];
+      for(i = 0; i < TOP; i++) {
+        scan();
+        scan();
+        scan();
+        scan();
+        scan();
+      }
+      for(i = 0; i < VOICE_COUNT; i++) voices[i].freq = 0;
+    }
   }
+*/
+  for(;;) scan();
 
   return 0;
 }
