@@ -1,13 +1,7 @@
 
-
-#define F_CPU 8000000
-
 #include <avr/pgmspace.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
-
-#include <util/delay.h>
-
 #include <stdint.h>
 
 #include "freq.h"
@@ -15,6 +9,8 @@
 
 #define VOICE_BITS        3
 #define KEY_BYTES         (2 * 1)
+#define INITIAL_TUNING    0
+#define FREQ_OFFSET       (68 - 4)
 
 #define INSTRUMENT_COUNT  (sizeof(WAVE) / sizeof(WAVE[0]))
 #define VOICE_COUNT       (1 << VOICE_BITS)
@@ -28,9 +24,12 @@
 typedef struct Voice {
   volatile uint16_t timer;
   volatile uint16_t freq;
+  uint8_t freq_index;
 } Voice;
 
 static volatile uint8_t instrument;
+static int8_t tuning;
+static uint8_t control_pressed;
 static Voice voices[VOICE_COUNT];
 static uint8_t key_state[KEY_BYTES];
 
@@ -38,11 +37,10 @@ ISR(TIMER0_COMPA_vect)
 {
   uint16_t mix = 0;
   for(uint8_t vi = 0; vi < VOICE_COUNT; vi++) {
-    const uint16_t freq = voices[vi].freq;
     const uint16_t timer = voices[vi].timer;
     const uint8_t wave_index = timer >> 8;
     mix += WAVE[instrument][wave_index];
-    voices[vi].timer = timer + freq;
+    voices[vi].timer = voices[vi].freq + timer;
   }
   OCR1B = (uint8_t)(mix >> VOICE_BITS);
 }
@@ -50,9 +48,10 @@ ISR(TIMER0_COMPA_vect)
 static void press_key(uint8_t freq_index)
 {
   for(uint8_t i = 0; i < VOICE_COUNT; i++) {
-    if(voices[i].freq == 0) {
+    if(voices[i].freq_index == 0) {
       voices[i].timer = 0;
-      voices[i].freq = FREQUENCIES[freq_index];
+      voices[i].freq = FREQUENCIES[freq_index] + tuning;
+      voices[i].freq_index = freq_index;
       break;
     }
   }
@@ -60,10 +59,10 @@ static void press_key(uint8_t freq_index)
 
 static void release_key(uint8_t freq_index)
 {
-  const uint16_t freq = FREQUENCIES[freq_index];
   for(uint8_t i = 0; i < VOICE_COUNT; i++) {
-    if(voices[i].freq == freq) {
+    if(voices[i].freq_index == freq_index) {
       voices[i].freq = 0;
+      voices[i].freq_index = 0;
       break;
     }
   }
@@ -71,38 +70,69 @@ static void release_key(uint8_t freq_index)
 
 static void set_mode(uint8_t i)
 {
-  i -= 4; // First 4 notes are blank
-  if(i < INSTRUMENT_COUNT) {
-    instrument = i;
+  i -= FREQ_OFFSET + 4;   // First 4 are blank.
+  switch(i) {
+  case 0: // C
+    instrument = TRIANGLE_WAVE;
+    break;
+  case 2: // D
+    instrument = SINE_WAVE;
+    break;
+  case 4: // E
+    instrument = SQUARE_WAVE;
+    break;
+  case 5: // F
+    instrument = SAWTOOTH_WAVE;
+    break;
+  case 1: // C# (flatten)
+    if(tuning > -128) {
+      tuning -= 1;
+    }
+    break;
+  case 3: // D# (sharpen)
+    if(tuning < 127) {
+      tuning += 1;
+    }
+    break;
+  case 6: // F# (reset tuning)
+    tuning = INITIAL_TUNING;
+    break;
+  default:
+    break;
   }
 }
 
 static void scan()
 {
-  uint8_t freq_index = 68 - 4;
+  uint8_t freq_index = FREQ_OFFSET;
 
   // Pull the load enable high to hold values.
   PORTB |= 1 << KEY_LATCH_PIN;
 
+  const uint8_t control = (~PINB) & (1 << FUN_INPUT_PIN);
   for(uint8_t i = 0; i < KEY_BYTES; i++) {
-    const uint8_t control = 0; //(~PINB) & (1 << FUN_INPUT_PIN);
     uint8_t state = key_state[i];
     for(uint8_t mask = 0x80; mask; mask >>= 1) {
 
       // Bring clock low so we shift on the next clock.
       PORTB &= ~(1 << KEY_CLOCK_PIN);
 
-      const uint8_t input = (~PINB) & (1 << KEY_INPUT_PIN);
-      if(control) {
-        if(input) set_mode(freq_index);
-      } else {
-        const uint8_t current = state & mask;
-        if(input && !current) {
-          press_key(freq_index);
-          state |= mask;
-        } else if(!input && current) {
-          release_key(freq_index);
-          state &= ~mask;
+      if(FREQUENCIES[freq_index]) {
+        const uint8_t input = (~PINB) & (1 << KEY_INPUT_PIN);
+        if(control) {
+          if(input && !control_pressed) {
+            set_mode(freq_index);
+            control_pressed = 1;
+          }
+        } else {
+          const uint8_t current = state & mask;
+          if(input && !current) {
+            press_key(freq_index);
+            state |= mask;
+          } else if(!input && current) {
+            release_key(freq_index);
+            state &= ~mask;
+          }
         }
       }
 
@@ -111,10 +141,9 @@ static void scan()
 
       freq_index += 1;
     }
-    if(!control) {
-      key_state[i] = state;
-    }
+    if(!control) key_state[i] = state;
   }
+  if(!control) control_pressed = 0;
 
   // Pull load enable low to load new values.
   PORTB &= ~(1 << KEY_LATCH_PIN);
@@ -124,12 +153,15 @@ static void init()
 {
   uint8_t i;
   for(i = 0; i < VOICE_COUNT; i++) {
+    voices[i].freq_index = 0;
     voices[i].freq = 0;
   }
   for(i = 0; i < KEY_BYTES; i++) {
     key_state[i] = 0;
   }
   instrument = 0;
+  tuning = INITIAL_TUNING;
+  control_pressed = 0;
 }
 
 int main()
@@ -140,13 +172,6 @@ int main()
   // Default is 1MHz, switch to 8MHz
   CLKPR = 1 << CLKPCE;
   CLKPR = 0;
-
-  // Ports
-  //  Port 0 = key latch out
-  //  Port 1 = key clock out
-  //  Port 2 = control (input)
-  //  Port 3 = key in
-  //  Port 4 = audio out
 
   // Set input pullups and output state.
   PORTB = (1 << FUN_INPUT_PIN);
@@ -175,50 +200,9 @@ int main()
 
   sei();
 
-#define TOP 100
-/*
   for(;;) {
-    init();
-    uint8_t i;
-    for(instrument = 0; instrument <= 3; instrument++) {
-      uint8_t note;
-      for(note = 4; note < 112; note++) {
-        voices[0].freq = FREQUENCIES[note];
-        if(FREQUENCIES[note]) {
-          for(i = 0; i < TOP; i++) {
-            scan();
-          }
-          voices[0].freq = 0;
-          for(i = 0; i < TOP / 4; i++) {
-            scan();
-          }
-        }
-      }
-voices[0].freq = FREQUENCIES[84];
-      for(i = 0; i < TOP; i++) {
-        scan();
-        scan();
-        scan();
-      }
-voices[1].freq = FREQUENCIES[88];
-      for(i = 0; i < TOP; i++) {
-        scan();
-        scan();
-        scan();
-      }
-voices[2].freq = FREQUENCIES[91];
-      for(i = 0; i < TOP; i++) {
-        scan();
-        scan();
-        scan();
-        scan();
-        scan();
-      }
-      for(i = 0; i < VOICE_COUNT; i++) voices[i].freq = 0;
-    }
+    scan();
   }
-*/
-  for(;;) scan();
 
   return 0;
 }
