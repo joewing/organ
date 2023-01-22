@@ -7,19 +7,19 @@ LDFLAGS = -mmcu=$(MCU) -Os
 
 .SUFFIXES: .c .o .py .hex .elf
 
-all: dp-size
+all: size
 
 .elf.hex: $<
 	avr-objcopy -j .text -j .data -O ihex $< $@
 
-dp.elf: dp.c freq.h wave.h
-	avr-gcc $(CFLAGS) -o $@ dp.c
+mk.elf: mk.c freq.h wave.h
+	avr-gcc $(CFLAGS) -o $@ mk.c
 
-dp-size: dp.hex
-	avr-size --format=avr --mcu=$(MCU) dp.elf
+size: mk.hex
+	avr-size --format=avr --mcu=$(MCU) mk.elf
 
-dp-program: dp.hex
-	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:dp.hex
+program: mk.hex
+	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:mk.hex
 
 freq.h: freq.py
 	python3 freq.py > freq.h
