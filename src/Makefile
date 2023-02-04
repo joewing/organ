@@ -1,5 +1,9 @@
 
-MCU = attiny85
+#MCU = attiny85
+#MCU = attiny45
+#MCU = attiny25
+#MCU = attiny84
+MCU = attiny861a
 PROGRAMMER = usbtiny
 
 CFLAGS  = -mmcu=$(MCU) -Os -Wall
