@@ -4,7 +4,11 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-#define ATTINY861A
+#if defined(__AVR_ATtiny861A__) || defined(__AVR_ATtiny461A__)
+#   define ATTINY861A
+#else
+#   define ATTINY85
+#endif
 
 #include <stdint.h>
 #include <string.h>
@@ -32,44 +36,43 @@
 #define AUDIO_OUT_PIN PB4
 #endif
 
-#define FREQ_COUNT          (sizeof(FREQUENCIES) / sizeof(FREQUENCIES[0]))
 #define VOICE_COUNT         (1 << VOICE_BITS)
 #define KEY_BYTES           (OCTAVE_COUNT * 2)  // 2 bytes per octave
 #define TUNING_KEY          (A4_INDEX - INITIAL_OCTAVE * 16) // Key index of A4
 #define TUNING_EEPROM_ADDR  (uint8_t*)0x00
 #define TUNING_COOKIE       0xA5
 
-#define MIN_FREQ_OFFSET     0
-#define MAX_FREQ_OFFSET     (FREQ_COUNT - 16 * OCTAVE_COUNT)
-
 // Number of steps to move through the waveform each beat.
 // In the order of Hammond drawbars:
 const static uint8_t __flash STEPS[] = {
-  1,    // 16'    - 16'               (16' - 1st)
-  3,    // 5 1/3' - Quint             (16' - 3rd)
-  2,    // 8'     - 8'          - 1st (16' - 2nd)
-  4,    // 4'     - 4'          - 2nd (16' - 4th, 4' - 1st)
-  6,    // 2 2/3' - Nazard      - 3rd (16' - 6th)
-  8,    // 2'     - 2'          - 4th (16' - 8th, 4' - 2nd, 2' - 1st)
-  10,   // 1 3/5' - Tierce      - 5th (16' - 10th)
-  12,   // 1 1/3' - Larigot     - 6th (16' - 12th, 4' - 3rd)
-  16,   // 1      - 1'          - 8th (16' - 16th, 4' - 4rd)
+  1,    // 16'
+  3,    // 5 1/3'
+  2,    // 8'
+  4,    // 4'
+  6,    // 2 2/3'
+  8,    // 2'
+  10,   // 1 3/5'
+  12,   // 1 1/3'
+  16,   // 1
 };
-#define HARMONIC_COUNT (sizeof(STEPS) / sizeof(STEPS[0]))
+#define DRAWBAR_COUNT (sizeof(STEPS) / sizeof(STEPS[0]))
 
 typedef struct Voice {
-  volatile uint16_t timer;    // Index into the wave table
+  struct Voice *prev;
+  struct Voice *next;
+  uint16_t timer;             // Index into the wave table
   volatile uint16_t freq;     // Increment for the timer (0 if off)
   uint8_t key_index;          // Key index (0 if off)
 } Voice;
 
 static int8_t tuning_updated;         // Set if tuning needs to be saved
 static uint8_t control_pressed;
-static uint8_t freq_offset = INITIAL_OCTAVE * 16;
 static Voice voices[VOICE_COUNT];
+static Voice *voice_head;             // Next voice to use
+static Voice *voice_tail;             // Last voice used
 static uint8_t key_state[KEY_BYTES];
 static uint8_t wave[256];
-static uint8_t drawbars[HARMONIC_COUNT];
+static uint8_t drawbars[DRAWBAR_COUNT];
 
 ISR(TIMER0_COMPA_vect)
 {
@@ -84,15 +87,22 @@ ISR(TIMER0_COMPA_vect)
 
 static void press_key(uint8_t key_index)
 {
-  for(Voice *vp = voices; vp != &voices[VOICE_COUNT]; vp++) {
-    if(vp->key_index == 0) {
-      const uint8_t freq_index = key_index + freq_offset;
-      vp->freq = FREQUENCIES[freq_index];
-      vp->key_index = key_index;
-      key_state[key_index >> 3] |= 1 << (key_index & 7);
-      break;
-    }
-  }
+  const uint8_t freq_index = key_index + (INITIAL_OCTAVE * 16);
+
+  // Take a voice from the head of the list and put it on the tail.
+  // Note that we don't mark the key as released so that it
+  // doesn't get re-pressed until it is actually released.
+  Voice *vp = voice_head;
+  voice_head = vp->next;
+  voice_head->prev = NULL;
+  vp->next = NULL;
+  vp->prev = voice_tail;
+  voice_tail->next = vp;
+  voice_tail = vp;
+
+  vp->freq = FREQUENCIES[freq_index];
+  vp->key_index = key_index;
+  key_state[key_index >> 3] |= 1 << (key_index & 7);
 }
 
 static void release_key(uint8_t key_index)
@@ -100,18 +110,45 @@ static void release_key(uint8_t key_index)
   for(Voice *vp = voices; vp != &voices[VOICE_COUNT]; vp++) {
     if(vp->key_index == key_index) {
       vp->freq = 0;
-      vp->timer = 0;
       vp->key_index = 0;
-      key_state[key_index >> 3] &= ~(1 << (key_index & 7));
+
+      // Remove the voice from it's position in the list and
+      // place it at the head.
+      if(vp->prev) {
+        vp->prev->next = vp->next;
+        if(vp->next) {
+          vp->next->prev = vp->prev;
+        } else {
+          voice_tail = vp->prev;
+        }
+
+        vp->next = voice_head;
+        voice_head = vp;
+      }
       break;
     }
   }
+  key_state[key_index >> 3] &= ~(1 << (key_index & 7));
 }
 
 static void release_all_keys()
 {
-  memset(voices, 0, sizeof(voices));
   memset(key_state, 0, sizeof(key_state));
+
+  voice_head = NULL;
+  voice_tail = NULL;
+  for(Voice *vp = voices; vp != &voices[VOICE_COUNT]; vp++) {
+    vp->freq = 0;
+    vp->key_index = 0;
+    vp->prev = voice_tail;
+    vp->next = NULL;
+    if(voice_tail) {
+      voice_tail->next = vp;
+    } else {
+      voice_head = vp;
+    }
+    voice_tail = vp;
+  }
 }
 
 static void press_tuning_key()
@@ -142,32 +179,30 @@ static void write_tuning()
 static void update_wave()
 {
 
-  // Release all keys before doing this.
+  // Compute an upper bound on the total mixture.
+  uint8_t total_mixture = 0;
+  for(const uint8_t *dp = drawbars; dp != &drawbars[DRAWBAR_COUNT]; dp++) {
+    total_mixture += *dp;
+  }
+  if(total_mixture == 0) total_mixture = 1;
+
+  // Release all keys before modifying the waveform.
   release_all_keys();
 
-  // Compute the total mixture.
-  uint8_t total_mixture = 0;
-  for(uint8_t h = 0; h < HARMONIC_COUNT; h++) {
-    total_mixture += drawbars[h];
-  }
-
   // Create the new waveform.
-  uint8_t current_index[HARMONIC_COUNT] = { 0 };
+  uint8_t current_index[DRAWBAR_COUNT] = { 0 };
   for(uint8_t *wp = wave; wp != &wave[256]; wp++) {
 
-    // Add in each stop.
+    // Add in the contribution from each drawbar.
     uint16_t mixture = 0;
-    for(uint8_t h = 0; h < HARMONIC_COUNT; h++) {
+    for(uint8_t h = 0; h < DRAWBAR_COUNT; h++) {
       const uint8_t wave_index = current_index[h];
       mixture += SINE_WAVE[wave_index] * drawbars[h];
       current_index[h] += STEPS[h];
     }
 
-    if(total_mixture) {
-      *wp = mixture / total_mixture;
-    } else {
-      *wp = 0;
-    }
+    // Store the scaled mixture to the waveform.
+    *wp = (uint8_t)(mixture / total_mixture);
   }
 }
 
@@ -184,14 +219,14 @@ static void update_drawbars()
 {
   if(ADCSRA & (1 << ADIF)) {
     const uint8_t index = ADMUX & 31;
-    const uint8_t value = ADCH >> 5;
+    const uint8_t value = (uint8_t)ADCH >> 5;
     if(value != drawbars[index]) {
       drawbars[index] = value;
       update_wave();
     }
 
     // Next input.
-    ADMUX = (ADMUX & ~31) | (index >= HARMONIC_COUNT) ? 0 : (index + 1);
+    ADMUX = (ADMUX & ~31) | (index >= DRAWBAR_COUNT) ? 0 : (index + 1);
     ADCSRA |= (1 << ADSC) | (1 << ADIF);
   }
 }
@@ -201,6 +236,8 @@ static void set_mode(uint8_t i)
 {
   i -= 4;   // First 4 are blank.
   switch(i) {
+
+#ifndef ATTINY861A
   case 0:   // C
     update_stop(2);
     break;
@@ -228,6 +265,9 @@ static void set_mode(uint8_t i)
   case 3: // D#
     update_stop(1);
     break;
+#endif
+
+
   case 6: // F# (flatten)
     if(OSCCAL > 0) {
       OSCCAL -= 1;
@@ -235,14 +275,22 @@ static void set_mode(uint8_t i)
     }
     break;
   case 8: // G# (reset tuning)
+    memset(drawbars, 0, sizeof(drawbars));
     update_wave();
     read_tuning();
     break;
   case 10: // A# (sharpen)
+#ifdef ATTINY861A
+    if(OSCCAL < 255) {
+      OSCCAL += 1;
+      tuning_updated = 1;
+    }
+#else
     if(OSCCAL < 127) {
       OSCCAL += 1;
       tuning_updated = 1;
     }
+#endif
     break;
   default:
     break;
@@ -259,6 +307,11 @@ static void scan()
   PORTB |= 1 << KEY_LATCH_PIN;
 
   const uint8_t control = (~PINB) & (1 << FUN_INPUT_PIN);
+#ifdef ATTINY861A
+  const uint8_t sustain = (~PINA) & (1 << PA3);
+#else
+  const uint8_t sustain = 0;
+#endif
   for(uint8_t i = 0; i < KEY_BYTES; i++) {
     const uint8_t state = key_state[i];
     for(uint8_t mask = 0x01; mask; mask <<= 1) {
@@ -279,7 +332,7 @@ static void scan()
         const uint8_t current = state & mask;
         if(input && !current) {
           press_key(key_index);
-        } else if(!input && current) {
+        } else if(!input && current && !sustain) {
           release_key(key_index);
         }
       }
@@ -317,9 +370,13 @@ int main()
   CLKPR = 1 << CLKPCE;
   CLKPR = 0;
 
+  // Enable PLL.
+  PLLCSR |= (1 << PLLE);
+
   // Set input pullups and output state.
-  PORTA = (1 << FUN_INPUT_PIN);
-  PORTB = (1 << KEY_INPUT_PIN);
+  PORTA = (1 << PA3);
+  PORTB = (1 << KEY_INPUT_PIN)
+        | (1 << FUN_INPUT_PIN);
 
   // Set outputs.
   DDRA = 0;
@@ -328,7 +385,7 @@ int main()
        | (1 << AUDIO_OUT_PIN);
 
   // PWM timer setup (timer1)
-  PLLCSR = (1 << PCKE) | (1 << PLLE);     // 64MHz PLL source for timer1
+  PLLCSR |= (1 << PCKE);                  // 64MHz PLL source for timer1
   TIMSK = 0;                              // Timer interrupts off
   TCCR1A = (1 << CS10);                   // 1:1 prescalar
   TCCR1B = (1 << PWM1B) | (2 << COM1B0);  // PWM B, clear on match, OC1B

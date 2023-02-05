@@ -1,7 +1,5 @@
 
 #MCU = attiny85
-#MCU = attiny45
-#MCU = attiny25
 #MCU = attiny84
 MCU = attiny861a
 PROGRAMMER = usbtiny
@@ -16,14 +14,14 @@ all: size
 .elf.hex: $<
 	avr-objcopy -j .text -j .data -O ihex $< $@
 
-mk.elf: mk.c freq.h wave.h
-	avr-gcc $(CFLAGS) -o $@ mk.c
+organ.elf: organ.c freq.h wave.h
+	avr-gcc $(CFLAGS) -o $@ organ.c
 
-size: mk.hex
-	avr-size --format=avr --mcu=$(MCU) mk.elf
+size: organ.hex
+	avr-size --format=avr --mcu=$(MCU) organ.elf
 
-program: mk.hex
-	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:mk.hex
+program: organ.hex
+	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:organ.hex
 
 freq.h: freq.py
 	python3 freq.py > freq.h
