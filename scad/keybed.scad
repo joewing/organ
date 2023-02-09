@@ -28,9 +28,11 @@ hinge_y = white_key_length - 54 + 3;
 hinge_z = 4;
 pcb_offset = 116;
 middle_hole_offset = 196;
-key_elevation = 12;
+key_elevation = 11.4;
 bed_zoffset = -key_elevation - 0.2;
 back_height = white_key_height + key_elevation + 3;
+black_key_stop_height = (black_key_length - (white_key_length - joint_offset))
+    * ((key_elevation - bed_height) / (white_key_length - (white_key_length - joint_offset))) - 0.2;
 
 white_key_widths = [23, 24, 23, 24, 23, 23, 24];
 black_key_offsets = [14, 42, 83, 110, 137];
@@ -210,7 +212,7 @@ module pcb_standoff(x, y) {
                     }
                 }
             }
-            translate([0, 0, (pcb_thickness + 20) / 2])cube([20, 0.4, 20], center=true);
+            translate([0, 0, (pcb_thickness + 20) / 2])cube([20, 0.5, 20], center=true);
         }
     }
 }
@@ -222,11 +224,11 @@ module pcb_mount() {
         translate([0, pcb_offset - 1]) cube([base_width, 6, pcb_standoff_height]);
         translate([8, pcb_offset + pcb_length - 3]) cube([base_width - 16, 4, pcb_standoff_height]);
     }
-    translate([8, pcb_offset + pcb_length + 1.4, pcb_thickness]) rotate([0, 90, 0]) {
-        cylinder(base_width - 16, 3, 3, $fn=3);
+    translate([8, pcb_offset + pcb_length + 2.4, pcb_thickness]) rotate([0, 90, 0]) {
+        cylinder(base_width - 16, 4, 4, $fn=3);
     }
-    translate([0, pcb_offset + pcb_length + 0.4, pcb_thickness - 0.4 - 1.5]) {
-        cube([base_width, 4, 3]);
+    translate([0, pcb_offset + pcb_length + 0.4, pcb_thickness - 3]) {
+        cube([base_width, 9, 5]);
     }
     translate([0, pcb_offset - 4, 0]) {
         cube([base_width, 4 - 0.4, pcb_thickness + 1]);
@@ -295,8 +297,8 @@ module bed() {
         }
         
         // Stop for black keys.
-        translate([0, 12 + 32, 0]) {
-            cube([base_width, 26 - 0.4, 1.5]);
+        translate([0, white_key_length - black_key_length - 1, 0]) {
+            cube([base_width, 20 - 0.4, black_key_stop_height]);
         }
     }
 }
@@ -369,3 +371,4 @@ rotate([0, 0, 90]) {
     if(OUTPUT_BRACE) brace();
     if(OUTPUT_CONTROL) controller();
 }
+
