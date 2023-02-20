@@ -1,10 +1,14 @@
+/* Polyphonic Drawbar Organ for the ATtiny861
+ * Joe Wingbermuehle
+ * 2023-02-11
+ */
 
 #include <avr/pgmspace.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 
-#if defined(__AVR_ATtiny861A__) || defined(__AVR_ATtiny461A__) || defined(__AVR_ATtiny861__)
+#if defined(__AVR_ATtiny861A__) || defined(__AVR_ATtiny861__)
 #   define ATTINY861A
 #else
 #   define ATTINY85
@@ -17,10 +21,8 @@
 #include "wave.h"
 
 #define VOICE_BITS        3       // 2^n voices at the same time
-#define OCTAVE_COUNT      2       // Number of physcial octaves
-#define INITIAL_OCTAVE    3       // Initial lowest physical octave
-#define INITIAL_TUNING    0       // Initial tuning offset
-#define A4_INDEX          77      // Frequency index of A4
+#define OCTAVE_COUNT      6       // Number of physcial octaves
+#define INITIAL_OCTAVE    1       // Initial lowest physical octave
 
 #ifdef ATTINY861A
 #define KEY_LATCH_PIN PB0
@@ -65,8 +67,7 @@ typedef struct Voice {
   uint8_t key_index;          // Key index (0 if off)
 } Voice;
 
-static int8_t tuning_updated;         // Set if tuning needs to be saved
-static uint8_t control_pressed;
+static uint8_t tuning_updated;         // Set if tuning needs to be saved
 static Voice voices[VOICE_COUNT];
 static Voice *voice_head;             // Next voice to use
 static uint8_t key_state[KEY_BYTES];
@@ -108,13 +109,15 @@ static void release_key(uint8_t key_index)
 
       // Remove the voice from it's position in the list and
       // place it at the head.
-      vp->prev->next = vp->next;
-      vp->next->prev = vp->prev;
-      vp->prev = voice_head->prev;
-      vp->next = voice_head;
-      voice_head->prev->next = vp;
-      voice_head->prev = vp;
-      voice_head = vp;
+      if(vp != voice_head) {
+        vp->prev->next = vp->next;
+        vp->next->prev = vp->prev;
+        vp->prev = voice_head->prev;
+        vp->next = voice_head;
+        voice_head->prev->next = vp;
+        voice_head->prev = vp;
+        voice_head = vp;
+      }
       break;
     }
   }
@@ -175,7 +178,13 @@ static void update_wave()
   }
   if(total_mixture == 0) total_mixture = 1;
 
-  // Create the new waveform.
+  // Disable interrupts before updating the waveform to avoid pops.
+  const uint8_t t = SREG;
+  cli();
+
+  // Create the new waveform using our initial guess for the amplitude.
+  uint8_t max_value = 0;
+  uint8_t min_value = 255;
   uint8_t current_index[DRAWBAR_COUNT] = { 0 };
   for(uint8_t *wp = wave; wp != &wave[256]; wp++) {
 
@@ -189,7 +198,20 @@ static void update_wave()
 
     // Store the scaled mixture to the waveform.
     *wp = (uint8_t)(mixture / total_mixture);
+    if(*wp > max_value) max_value = *wp;
+    if(*wp < min_value) min_value = *wp;
   }
+
+  // Scale up to the full amplitude.
+  const uint8_t scale = 255 - max_value + min_value;
+  for(uint8_t *wp = wave; wp != &wave[256]; wp++) {
+    const uint16_t unscaled = *wp - min_value;
+    const uint16_t scaled = (unscaled << 8) + (unscaled * scale);
+    *wp = (uint8_t)(scaled >> 8);
+  }
+
+  // Restore interrupts.
+  SREG = t;
 }
 
 #ifndef ATTINY861A
@@ -205,6 +227,7 @@ static void update_drawbars()
 {
   if(!(ADCSRA & (1 << ADSC))) {
     const uint8_t index = ADMUX & 31;
+    const uint8_t next_index = index + 1;
     const uint8_t value = (uint8_t)ADCH >> 5;
     if(value != drawbars[index]) {
       drawbars[index] = value;
@@ -212,7 +235,9 @@ static void update_drawbars()
     }
 
     // Next input.
-  //  ADMUX = (ADMUX & ~31) | (index >= DRAWBAR_COUNT) ? 0 : (index + 1);
+    ADMUX = (0 << REFS0) 
+          | (1 << ADLAR)
+          | ((next_index >= DRAWBAR_COUNT) ? 0 : next_index);
     ADCSRA |= (1 << ADSC);  // Start
   }
 }
@@ -261,8 +286,10 @@ static void set_mode(uint8_t i)
     }
     break;
   case 8: // G# (reset tuning)
+#ifndef ATTINY861A
     memset(drawbars, 0, sizeof(drawbars));
     update_wave();
+#endif
     read_tuning();
     break;
   case 10: // A# (sharpen)
@@ -286,8 +313,9 @@ static void set_mode(uint8_t i)
 
 static void scan()
 {
-  uint8_t key_index = 0;
+  static uint8_t control_pressed = 0;
   uint8_t has_press = 0;
+  uint8_t key_index = 0;
 
   // Pull the load enable high to hold values.
   PORTB |= 1 << KEY_LATCH_PIN;
@@ -329,7 +357,7 @@ static void scan()
       key_index += 1;
     }
   }
-  if(!has_press) control_pressed = 0;
+  control_pressed &= has_press;
   if(!control && tuning_updated) write_tuning();
 
   // Pull load enable low to load new values.
@@ -338,9 +366,12 @@ static void scan()
 
 static void init()
 {
+  release_all_keys();
   memset(drawbars, 0, sizeof(drawbars));
-  drawbars[2] = 4;
-  control_pressed = 0;
+#ifndef ATTINY861A
+  drawbars[2] = 1;
+  drawbars[3] = 1;
+#endif
   read_tuning();
   update_wave();
 }
@@ -371,8 +402,9 @@ int main()
        | (1 << AUDIO_OUT_PIN);
 
   // PWM timer setup (timer1)
+  // This timer uses high-frequency PWM to generate the amplitude of
+  // the wave based on the duty cycle set in OCR1B.
   PLLCSR |= (1 << PCKE);                  // 64MHz PLL source for timer1
-  TIMSK = 0;                              // Timer interrupts off
   TCCR1A  = (2 << COM1B0)                 // Clear on match, OC1B
           | (1 << PWM1B);                 // PWMB
   TCCR1B = (1 << CS10);                   // 1:1 prescalar
@@ -381,6 +413,8 @@ int main()
   OCR1B = 0;                              // Duty cycle
   
   // Tone generator timer setup (timer0)
+  // This timer invokes an interrupt to move through the waveforms
+  // and update the duty cycle of timer1.
   // Clock is 8MHz, set prescaler to 8 and divide by 50 to get 20kHz
   TCCR0A = 1;                             // 8-bit, waveform mode.
   TCCR0B = (2 << CS00);                   // Divide by 8
@@ -388,9 +422,9 @@ int main()
   TIMSK = 1 << OCIE0A;                    // Enable compare match interrupt
 
   // Set up ADC for drawbars.
-  ADMUX = (0 << REFS0)    // Vcc reference
-        | (1 << ADLAR)    // Left adjust (we only need 8 bits of resolution)
-        | (0 << MUX0);    // ADC0 - PA0
+  ADMUX   = (0 << REFS0)  // Vcc reference
+          | (1 << ADLAR)  // Left adjust (we only need 8 bits of resolution)
+          | (0 << MUX0);  // ADC0 - PA0
   ADCSRA  = (1 << ADEN)   // Enable ADC
           | (0 << ADSC)   // Don't start yet.
           | (0 << ADATE)  // Disable auto-trigger

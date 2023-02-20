@@ -1,10 +1,11 @@
 
-# 3D Printed Full-Size Polyphonic Organ Keyboard
+# 3D Printed Full-Size Polyphonic Drawbar Organ
 
 ## Features
   * Full-size keyboard
   * 8-way polyphony
-  * 9 drawbars to adjust harmonics
+  * 9 drawbars to adjust harmonics (like a Hammond organ)
+  * Sustain pedal
   * Range C0 through B7 (96 notes)
 
 ## Directories
@@ -15,8 +16,8 @@
 
 ## Function Keys
 
-Holding the "function" key on the controller PCB causes switches
-to function mode:
+Holding the "function" key on the controller PCB switches into
+function mode:
 
   * Tuning (saved in EEPROM)
     * F#0 - Flatten
@@ -29,7 +30,7 @@ to function mode:
   * White keys (7)
   * Black keys (5)
   * Assembly tool (to help attach the rubber bands)
-  * Control board
+  * Control board holder
 
 ## BOM
 
@@ -62,11 +63,33 @@ to function mode:
 ## Keys
 
 Each note is controlled by a limit switch. The output of the limit
-switches are latched and then processed serially using two
-74HC165s per octave (since there are only 12 notes in an octave,
-that 4 bits are wasted for simplicity).
+switches are processed serially using two 74HC165 8-bit parallel input
+shift registers per octave. Since there are only 12 notes in an octave
+4 bits are wasted for simplicity. Using this shift register interface,
+we can read all keys using only 3 pins of the microcontroller.
 
-In software, the state of each key is recorded in a bitmap.
+In software, the state of each key is recorded in a bitmap. When a new key
+press is detected, a "voice" is removed from the head of a linked list
+and placed at the end of the list. The frequency increment is set
+according to the index of the key that was pressed. The frequency increment
+is a 16-bit value used to move through the waveform every time the
+sample interrupt executes. The top 8 bits are used as an index into
+the 256 entry waveform.
+
+When a key release is detected, the "voice" is removed and placed at the
+head of the list and the frequency increment is set to 0 to prevent the
+sample interrupt from moving through the waveform.
+The linked list is used so that the least recently pressed key is
+re-used if there are too many keys pressed at the same time.
+
+Finally, the sustain pedal simply prevents the processing of key releases.
+
+## Drawbars
+
+There are nine drawbars (potentiometers) that are sampled using the 
+multiplexed ADC. One drawbar is sampled per iteration of the main loop.
+We track the quantized value of each drawbar. When a change is
+detected, its value is recorded and the waveform is recomputed.
 
 ## Waves
 
@@ -88,4 +111,7 @@ When a drawbar is changed, the waveform is recomputed by adding
 together the contributions from each drawbar. The final value is
 scaled down by the total contribution.
 
+A timer interrupt causes us to move through the waveform and update
+the PWM duty cycle. We keep track of our position in the waveform for
+each voice.
 

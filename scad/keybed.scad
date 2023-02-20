@@ -2,7 +2,7 @@
 
 OUTPUT_KEYS = 0;
 OUTPUT_BED = 1;
-OUTPUT_BRACE = 0;
+OUTPUT_BACK = 0;
 OUTPUT_CONTROL = 0;
 OUTPUT_TOOL = 0;
 
@@ -26,13 +26,11 @@ pcb_mount_height = 2;
 pcb_standoff_height = pcb_mount_height;
 hinge_y = white_key_length - 54 + 3;
 hinge_z = 4;
-pcb_offset = 116;
+pcb_offset = 90;
 middle_hole_offset = 196;
-key_elevation = 11.4;
+key_elevation = 10.5;
 bed_zoffset = -key_elevation - 0.2;
-back_height = white_key_height + key_elevation + 3;
-black_key_stop_height = (black_key_length - (white_key_length - joint_offset))
-    * ((key_elevation - bed_height) / (white_key_length - (white_key_length - joint_offset))) - 0.2;
+stop_height = white_key_height + key_elevation + 3;
 
 white_key_widths = [23, 24, 23, 24, 23, 23, 24];
 black_key_offsets = [14, 42, 83, 110, 137];
@@ -42,15 +40,6 @@ back_widths = [14, 14, 14, 14, 14, 13, 14, 13, 14, 13, 14, 13];
 function white_key_offset(i) = i == 0 ? 0 : white_key_offset(i - 1) + white_key_widths[i - 1];
 
 function back_offset(i) = i == 0 ? 0 : back_offset(i - 1) + back_widths[i - 1];
-
-module mag_mount(i) {
-    x = back_offset(i);
-    w = back_widths[i];
-    radius = 4.1 / 2;
-    translate([x + w / 2, white_key_length - radius * 2, -1]) {
-        cylinder(white_key_height + 2, radius, radius, $fn = 32);
-    }
-}
 
 module stabilizer(i) {
     x = back_offset(i);
@@ -104,7 +93,6 @@ module white_key(i, j, cutout_left, cutout_right) {
         }
         white_key_cutout(cutout_left);
         white_key_cutout(cutout_right);
-        mag_mount(j);
         stabilizer(j);
     }
     key_hinge(j);
@@ -127,7 +115,6 @@ module black_key(i, j) {
             band_holder(j);
             key_hinge(j);
         }
-        mag_mount(j);
         stabilizer(j);
     }
     key_hinge(j);
@@ -165,7 +152,7 @@ module key_stand(j) {
         translate([x, white_key_length - 59, 0]) {
             translate([w / 2 - black_key_width / 6 + 0.25, 0, 0]) {
                 difference() {
-                    cube([black_key_width / 3 - 0.5, 21 + 5, back_height]);
+                    cube([black_key_width / 3 - 0.5, 21 + 5, stop_height]);
                     translate([-1, 25, -5]) {
                         rotate([45, 0, 0]) cube([14, 22, 12]);        
                     }
@@ -173,7 +160,7 @@ module key_stand(j) {
             }
             translate([0, 8, 0]) cube([w, 13, key_elevation]);
         }
-        translate([x + w / 2 - black_key_width / 6, white_key_length - 59, back_height]) {
+        translate([x + w / 2 - black_key_width / 6, white_key_length - 59, stop_height]) {
             rotate([-30, 0, 0]) cube([15, 9, 20], center = true);
         }
         
@@ -185,8 +172,8 @@ module key_stand(j) {
     }
 
     // Rubber band holder
-    translate([x + w / 2, white_key_length - 1.25 * 25.4 + 3, -1.1]) {
-        rotate([45, 0, 0]) cylinder(9, 1.8, 1.8, $fn=32);
+    translate([x + w / 2, white_key_length - 1.25 * 25.4 + 3, -1.3]) {
+        rotate([45, 0, 0]) cylinder(9.1, 1.8, 1.8, $fn=32);
     }
 }
 
@@ -218,26 +205,26 @@ module pcb_standoff(x, y) {
 }
 
 module pcb_mount() {
-    translate([0, 0, -pcb_standoff_height]) {
+    translate([0, 0, -pcb_standoff_height - 0.1]) {
         pcb_standoff(3.5 + 1, pcb_offset + 3.5);
         pcb_standoff(base_width - 3.5 - 1, pcb_offset + 3.5);
         translate([0, pcb_offset - 1]) cube([base_width, 6, pcb_standoff_height]);
         translate([8, pcb_offset + pcb_length - 3]) cube([base_width - 16, 4, pcb_standoff_height]);
     }
-    translate([8, pcb_offset + pcb_length + 2.4, pcb_thickness]) rotate([0, 90, 0]) {
+    translate([8, pcb_offset + pcb_length + 2.5, pcb_thickness]) rotate([0, 90, 0]) {
         cylinder(base_width - 16, 4, 4, $fn=3);
     }
-    translate([0, pcb_offset + pcb_length + 0.4, pcb_thickness - 3]) {
-        cube([base_width, 9, 5]);
+    translate([0, pcb_offset + pcb_length + 0.5, pcb_thickness - 3]) {
+        cube([base_width, 6, 5]);
     }
     translate([0, pcb_offset - 4, 0]) {
-        cube([base_width, 4 - 0.4, pcb_thickness + 1]);
+        cube([base_width, 4 - 0.5, pcb_thickness + 1]);
     }
 }
 
 module screw_hole(x, y) {
     translate([x, y, -bed_height - 1]) {
-        cylinder(bed_height + 2, 2.1, 2.1, $fn=32);
+        cylinder(bed_height + 2, 2.2, 2.2, $fn=32);
         translate([0, 0, screw_head_height]) cylinder(bed_height, 4, 4, $fn=32);
     }
 }
@@ -250,6 +237,8 @@ mounting_hole_positions = [
 ];
 
 module bed() {
+    ziptie_height = 3.6;
+    ziptie_width = 1.4;
     translate([0, 0, bed_zoffset]) {
         difference() {
             union() {
@@ -259,11 +248,11 @@ module bed() {
             
             // Cutouts to save filament
             translate([12, 12, -bed_height - 5]) {
-                cube([base_width - 12 * 2, 32, bed_height + 10]);
+                cube([base_width - 12 * 2, 30, bed_height + 10]);
             }
             
-            translate([12, 12 + 32 + 30, -bed_height - 5]) {
-                cube([base_width - 12 * 2, 38, bed_height + 10]);
+            translate([12, 12 + 32 + 5, -bed_height - 5]) {
+                cube([base_width - 12 * 2, 30, bed_height + 10]);
             }
             
             translate([12, pcb_offset + 8, -bed_height - 5]) {
@@ -273,13 +262,17 @@ module bed() {
                 cube([(base_width - 12 * 3) / 2, pcb_length - 12, bed_height + 10]);
             }
             
+            translate([12, pcb_offset + pcb_length + 10, -bed_height - 5]) {
+                cube([base_width - 12 * 2, 15, bed_height + 10]);
+            }
+            
             translate([12, white_key_length - 25.4, -bed_height - 5]) {
                 cube([base_width - 12 * 2, 25.4 * 0.5, bed_height + 10]);
             }
             
             // Cutout for the PCB.
-             translate([-0.1, pcb_offset - 0.4, -pcb_mount_height]) {
-                cube([base_width + 0.2, pcb_length + 0.8, pcb_standoff_height + 2]); 
+             translate([-0.1, pcb_offset - 0.5, -pcb_mount_height]) {
+                cube([base_width + 0.2, pcb_length + 1, pcb_standoff_height + 2]); 
              }
             
             // Mounting holes.
@@ -287,19 +280,29 @@ module bed() {
                 screw_hole(pos[0], pos[1]);
             }
             
+            // Cutouts for zip-ties.
+            translate([0, joint_offset - 10, 4]) {
+                translate([2.5, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
+                translate([base_width - 2.5 - ziptie_width, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
+            }
+
         }
         
         pcb_mount();
         
         // Key stop
         translate([0, bed_length - 10, -1]) {
-            cube([base_width, 10, key_elevation + 1]);
+            difference() {
+                cube([base_width, 10, key_elevation + 1]);
+                translate([0, -10, 4]) {
+                    translate([5, 0, 0]) cube([ziptie_width, 30, ziptie_height]);
+                    translate([10, 0, 0]) cube([ziptie_width, 30, ziptie_height]);
+                    translate([base_width - 5 - ziptie_width, 0, 0]) cube([ziptie_width, 30, ziptie_height]);
+                    translate([base_width - 10 - ziptie_width, 0, 0]) cube([ziptie_width, 30, ziptie_height]);
+                }
+            }
         }
-        
-        // Stop for black keys.
-        translate([0, white_key_length - black_key_length - 1, 0]) {
-            cube([base_width, 20 - 0.4, black_key_stop_height]);
-        }
+            
     }
 }
 
@@ -322,21 +325,24 @@ module clip(hole_radius) {
     cylinder(bed_height - head_height, hole_radius, hole_radius, $fn=64);
 }
 
-module brace() {
-    brace_width = 25;
-    brace_height = 4;
-    clip_radius = 1.8;
-    translate([-brace_width / 2, 0, bed_zoffset - bed_height - brace_height - 0.2]) {
-        cube([brace_width, white_key_length, brace_height]);
-        translate([brace_width - 7.5, 5, brace_height]) clip(clip_radius);
-        translate([7.5, 5, brace_height]) clip(clip_radius);
-        translate([brace_width - 7.5, middle_hole_offset, brace_height]) clip(clip_radius);
-        translate([7.5, middle_hole_offset, brace_height]) clip(clip_radius);
+module back() {
+    back_length = 80 + 2;
+    back_height = bed_height + stop_height + 5;
+    translate([0, joint_offset + 12, bed_zoffset - bed_height]) {
+        difference() {
+            cube([base_width, back_length, back_height]);
+            translate([-1, -back_length + (white_key_length - joint_offset - 8), -4]) {
+                cube([base_width + 2, back_length - 3, back_height]);
+            }
+            translate([-1, back_length - 25, -4]) {
+                cube([base_width + 2, 20, 30]);
+            }
+        }
     }
 }
 
 module controller() {
-    controller_width = 164;
+    controller_width = base_width;
     controller_pcb_length = 80;
     controller_pcb_offset = 7;
     translate([-controller_width - 0.1, 0, bed_zoffset - bed_height]) {
@@ -349,10 +355,10 @@ module controller() {
             }
         }
         translate([0, 0, bed_height - pcb_mount_height]) {
-            pcb_standoff(3.5, pcb_offset + pcb_length - controller_pcb_length + controller_pcb_offset + 3.5);
-            pcb_standoff(controller_width - 3.5, pcb_offset + pcb_length - controller_pcb_length + controller_pcb_offset + 3.5);
-            pcb_standoff(3.5, pcb_offset + pcb_length + controller_pcb_offset - 3.5);
-            pcb_standoff(controller_width - 3.5, pcb_offset + pcb_length + controller_pcb_offset - 3.5);
+            pcb_standoff(4.5, pcb_offset + pcb_length - controller_pcb_length + controller_pcb_offset + 3.5);
+            pcb_standoff(controller_width - 4.5, pcb_offset + pcb_length - controller_pcb_length + controller_pcb_offset + 3.5);
+            pcb_standoff(4.5, pcb_offset + pcb_length + controller_pcb_offset - 3.5);
+            pcb_standoff(controller_width - 4.5, pcb_offset + pcb_length + controller_pcb_offset - 3.5);
         }
     }
 }
@@ -368,7 +374,7 @@ if(OUTPUT_TOOL) translate([-20, -20, -10]) tool();
 rotate([0, 0, 90]) {
     if(OUTPUT_KEYS) keys();
     if(OUTPUT_BED) bed();
-    if(OUTPUT_BRACE) brace();
+    if(OUTPUT_BACK) back();
     if(OUTPUT_CONTROL) controller();
 }
 

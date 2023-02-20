@@ -1,5 +1,5 @@
 
-SAMPLE_HZ     = 2 * 20000.0   # Frequency of the sample timer.
+SAMPLE_HZ     = 2 * 20000.0   # Frequency of the sample timer wrt 8'.
 A4_OFFSET     = 4 * 12 + 9    # Offset of A4 (we start with C0).
 OCTAVE_COUNT  = 8
 
@@ -18,6 +18,8 @@ note_names = [
   'B',
 ]
 
+a4_index = (A4_OFFSET // 12) * 16 + (A4_OFFSET % 12) + 4;
+print('#define A4_INDEX {} // Index of A4'.format(a4_index))
 print('const static uint16_t __flash FREQUENCIES[] = {')
 freq_index = 0
 array_index = 0
