@@ -26,11 +26,13 @@ pcb_mount_height = 2;
 pcb_standoff_height = pcb_mount_height;
 hinge_y = white_key_length - 54 + 3;
 hinge_z = 4;
+hinge_radius = 3;
 pcb_offset = 90;
 middle_hole_offset = 196;
-key_elevation = 10.5;
+key_elevation = 10.6;
 bed_zoffset = -key_elevation - 0.2;
 stop_height = white_key_height + key_elevation + 3;
+cutout_width = 7;
 
 white_key_widths = [23, 24, 23, 24, 23, 23, 24];
 black_key_offsets = [14, 42, 83, 110, 137];
@@ -44,21 +46,18 @@ function back_offset(i) = i == 0 ? 0 : back_offset(i - 1) + back_widths[i - 1];
 module stabilizer(i) {
     x = back_offset(i);
     w = back_widths[i];
-    translate([x + w / 2 - black_key_width / 6, white_key_length - 63, -1]) {
-        cube([black_key_width / 3, 33, black_key_height + 2]);
-    }
-    
-    // Cutout for rubber band
-    translate([x + w / 2 - black_key_width / 4, white_key_length - 1.25 * 25.4 - 0.1, -1]) {
-        cube([black_key_width / 2, 17, black_key_height + 2]);
+    translate([x + w / 2 - cutout_width / 2, white_key_length - 63, -1]) { 
+        cube([cutout_width, 48, black_key_height + 2]);
     }
 }
 
 module key_hinge(i) {
     x = back_offset(i);
     w = back_widths[i];
-    translate([x + key_spacing, hinge_y, hinge_z - 0.4]) {
-        rotate([0, 90, 0]) cylinder(w - key_spacing * 2, 2, 2, $fn=32);
+    translate([x + key_spacing / 2, hinge_y, hinge_z - 0.4]) {
+        rotate([0, 90, 0]) {
+            cylinder(w - key_spacing, hinge_radius, hinge_radius, $fn=64);
+        }
     }
 }
 
@@ -150,9 +149,9 @@ module key_stand(j) {
     // Stabilizer.
     difference() {
         translate([x, white_key_length - 59, 0]) {
-            translate([w / 2 - black_key_width / 6 + 0.25, 0, 0]) {
+            translate([w / 2 - cutout_width / 2 + 0.15, 0, 0]) {
                 difference() {
-                    cube([black_key_width / 3 - 0.5, 21 + 5, stop_height]);
+                    cube([cutout_width - 0.15 * 2, 21 + 5, stop_height]);
                     translate([-1, 25, -5]) {
                         rotate([45, 0, 0]) cube([14, 22, 12]);        
                     }
@@ -160,14 +159,14 @@ module key_stand(j) {
             }
             translate([0, 8, 0]) cube([w, 13, key_elevation]);
         }
-        translate([x + w / 2 - black_key_width / 6, white_key_length - 59, stop_height]) {
+        translate([x + w / 2 - cutout_width / 2, white_key_length - 59, stop_height]) {
             rotate([-30, 0, 0]) cube([15, 9, 20], center = true);
         }
         
         // Cut-out for hinge
-        translate([x - 1, hinge_y - 0.2, key_elevation + hinge_z]) {
-            rotate([-30, 0, 0]) translate([0, -2.2, 0]) cube([25, 4.4, 25]);
-            rotate([0, 90, 0]) cylinder(20, 2.2, 2.2, $fn=32);
+        translate([x - 1, hinge_y - 0.1, key_elevation + hinge_z]) {
+            rotate([-30, 0, 0]) translate([0, -hinge_radius - 0.1, 0]) cube([25, (hinge_radius + 0.1) * 2, 25]);
+            rotate([0, 90, 0]) cylinder(20, hinge_radius + 0.1, hinge_radius + 0.1, $fn=64);
         }
     }
 
@@ -282,8 +281,8 @@ module bed() {
             
             // Cutouts for zip-ties.
             translate([0, joint_offset - 10, 4]) {
-                translate([2.5, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
-                translate([base_width - 2.5 - ziptie_width, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
+                translate([1.6, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
+                translate([base_width - 1.6 - ziptie_width, 0, 0]) cube([ziptie_width, 29 + 10, ziptie_height]);
             }
 
         }
