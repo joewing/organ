@@ -1,8 +1,8 @@
 
-# 3D Printed Full-Size Polyphonic Drawbar Organ
+# 3D Printed Polyphonic Organ
 
 ## Features
-  * Full-size keyboard
+  * Full-size 3D printed keyboard
   * 8-way polyphony
   * 9 drawbars to adjust harmonics (like a Hammond organ)
   * Sustain pedal
@@ -17,12 +17,17 @@
 ## Function Keys
 
 Holding the "function" key on the controller PCB switches into
-function mode:
+function mode.
 
-  * Tuning (saved in EEPROM)
-    * F#0 - Flatten
-    * G#0 - Reset
-    * A#0 - Sharpen
+### Tuning
+
+Since we use the on-board oscillator, it is necessary to tune the
+clock frequency to make the notes in tune. This tuning is stored in
+EEPROM.
+
+  * F#0 - Flatten
+  * G#0 - Reset
+  * A#0 - Sharpen
 
 ## 3D Printed Parts
 
@@ -116,8 +121,9 @@ through the sine wave at different rates:
 When a drawbar is changed, the waveform is recomputed by adding
 together the scaled contributions from each drawbar. Each
 contribution is determined by stepping through the sine wave at the
-specified rate (2 for 8', etc) and scaling the amplitude by the drawbar
-level. The final waveform is scaled down by the max total contribution.
+specified rate (2 for 8', etc), wrapping around when necessary,
+and scaling the amplitude by the drawbar level. The final waveform
+is scaled down by the max total contribution.
 The waveform itself is stored as 256 8-bit values.
 
 Audio is generated using 64 MHz pulse-width modulation. The duty cycle
